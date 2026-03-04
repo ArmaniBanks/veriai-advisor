@@ -369,10 +369,15 @@ Model CID: ${VOLATILITY_MODEL_CID}`;
     );
   } catch (err: any) {
     console.error("analyze error:", err);
+    const errMsg = String(err.message || err);
+    let userError = "Inference failed. Please try again.";
+    if (errMsg.includes("does not exist") || errMsg.includes("account")) {
+      userError = "Your OpenGradient wallet is not registered or funded on the devnet. Please visit https://faucet.opengradient.ai to fund your wallet, then try again.";
+    } else if (errMsg.includes("smart contract")) {
+      userError = "Smart contract execution failed. Ensure your OG_PRIVATE_KEY corresponds to a funded wallet on the OpenGradient devnet (https://faucet.opengradient.ai).";
+    }
     return new Response(
-      JSON.stringify({
-        error: err.message || "Inference failed. Check OG_PRIVATE_KEY and ensure your wallet has funds on the OpenGradient devnet.",
-      }),
+      JSON.stringify({ error: userError }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
