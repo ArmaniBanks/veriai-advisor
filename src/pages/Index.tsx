@@ -3,7 +3,7 @@ import HeroSection from "@/components/HeroSection";
 import PortfolioCard from "@/components/PortfolioCard";
 import AgentPipeline from "@/components/AgentPipeline";
 import QueryDemo, { CopyableHash, type AnalyzeResult } from "@/components/QueryDemo";
-import { ShieldCheck, Activity } from "lucide-react";
+import { ShieldCheck, Activity, AlertCircle } from "lucide-react";
 
 const riskColors: Record<string, string> = {
   low: "text-success",
