@@ -192,6 +192,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let token: "ETH" | "BTC" = "ETH";
+  let holding = PORTFOLIO[token];
+
   try {
     const { query } = await req.json();
     if (!query || typeof query !== "string") {
@@ -211,8 +214,8 @@ serve(async (req) => {
 
     // Detect token
     const upperQuery = query.toUpperCase();
-    const token = upperQuery.includes("BTC") ? "BTC" : "ETH";
-    const holding = PORTFOLIO[token];
+    token = upperQuery.includes("BTC") ? "BTC" : "ETH";
+    holding = PORTFOLIO[token];
 
     console.log(`Initializing Web3 client for ${token} volatility analysis...`);
 
@@ -369,15 +372,41 @@ Model CID: ${VOLATILITY_MODEL_CID}`;
     );
   } catch (err: any) {
     console.error("analyze error:", err);
-    const errMsg = String(err.message || err);
-    let userError = "Inference failed. Please try again.";
-    if (errMsg.includes("does not exist") || errMsg.includes("account")) {
-      userError = "Your OpenGradient wallet is not registered or funded on the devnet. Please visit https://faucet.opengradient.ai to fund your wallet, then try again.";
-    } else if (errMsg.includes("smart contract")) {
-      userError = "Smart contract execution failed. Ensure your OG_PRIVATE_KEY corresponds to a funded wallet on the OpenGradient devnet (https://faucet.opengradient.ai).";
+    const errMsg = String(err?.message || err || "");
+    const isWalletOrExecutionIssue =
+      errMsg.includes("does not exist") ||
+      errMsg.includes("account") ||
+      errMsg.includes("smart contract") ||
+      errMsg.includes("execution reverted");
+
+    if (isWalletOrExecutionIssue) {
+      const fallbackVolatility = token === "BTC" ? 0.051 : 0.043;
+      const { risk_level, recommendation } = assessRisk(fallbackVolatility);
+      const answer = `${token} Volatility: ${fallbackVolatility.toFixed(4)} (${(fallbackVolatility * 100).toFixed(1)}%)
+
+Risk Assessment:
+${recommendation}
+
+Portfolio Position: ${holding.amount} ${token} (avg cost: $${holding.avg_cost_usd.toLocaleString()})
+
+Verification:
+Fallback estimate used because on-chain execution failed. Fund/register your wallet at https://faucet.opengradient.ai and retry for verified on-chain output.`;
+
+      return new Response(
+        JSON.stringify({
+          volatility: fallbackVolatility,
+          risk_level,
+          answer,
+          tx_hash: null,
+          warning:
+            "On-chain execution unavailable: wallet is not registered/funded on OpenGradient devnet. Showing fallback estimate.",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
+
     return new Response(
-      JSON.stringify({ error: userError }),
+      JSON.stringify({ error: "Inference failed. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
