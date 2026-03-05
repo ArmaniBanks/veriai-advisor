@@ -96,16 +96,18 @@ const Index = () => {
               </div>
 
               {/* Blockchain verification with copy */}
-              <div className="border border-border/50 rounded-md p-4 space-y-2">
-                <p className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                  Blockchain Verification
-                </p>
-                <CopyableHash label="Tx" value={result.tx_hash} />
-                <CopyableHash
-                  label="Model CID"
-                  value="hJD2Ja3akZFt1A2LT-D_1oxOCz_OtuGYw4V9eE1m39M"
-                />
-              </div>
+              {result.tx_hash && (
+                <div className="border border-border/50 rounded-md p-4 space-y-2">
+                  <p className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
+                    Blockchain Verification
+                  </p>
+                  <CopyableHash label="Tx" value={result.tx_hash} />
+                  <CopyableHash
+                    label="Model CID"
+                    value="hJD2Ja3akZFt1A2LT-D_1oxOCz_OtuGYw4V9eE1m39M"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
