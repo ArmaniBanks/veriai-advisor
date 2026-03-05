@@ -224,6 +224,81 @@ serve(async (req) => {
     const account = web3.eth.accounts.privateKeyToAccount(ogKey);
     web3.eth.accounts.wallet.add(account);
 
+    // ── Pre-flight: check wallet balance & OPG allowance ──
+    const balance = await web3.eth.getBalance(account.address);
+    console.log(`Wallet ${account.address} balance: ${balance.toString()} wei`);
+
+    if (BigInt(balance) === 0n) {
+      console.warn("Wallet has zero balance on OpenGradient devnet.");
+      return new Response(
+        JSON.stringify({
+          volatility: token === "BTC" ? 0.051 : 0.043,
+          risk_level: assessRisk(token === "BTC" ? 0.051 : 0.043).risk_level,
+          answer: `Your wallet (${account.address}) has no funds on the OpenGradient devnet.\n\n` +
+            `To enable verifiable on-chain inference:\n` +
+            `1. Visit https://faucet.opengradient.ai\n` +
+            `2. Enter your address: ${account.address}\n` +
+            `3. Request devnet tokens\n` +
+            `4. Retry your query\n\n` +
+            `Showing a fallback estimate in the meantime.`,
+          tx_hash: null,
+          warning: "Wallet has no funds. Visit https://faucet.opengradient.ai to fund it.",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── Check OPG token spending allowance ──
+    // The OPG token on devnet — used by the inference contract for payment
+    const OPG_TOKEN_ADDRESS = "0x0000000000000000000000000000000000001000";
+    const ERC20_ALLOWANCE_ABI = [
+      { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" },
+      { inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], name: "approve", outputs: [{ name: "", type: "bool" }], stateMutability: "nonpayable", type: "function" },
+      { inputs: [{ name: "account", type: "address" }], name: "balanceOf", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" },
+    ] as const;
+
+    const opgToken = new web3.eth.Contract(ERC20_ALLOWANCE_ABI, OPG_TOKEN_ADDRESS);
+
+    let opgBalance = 0n;
+    let allowance = 0n;
+    try {
+      opgBalance = BigInt(await opgToken.methods.balanceOf(account.address).call());
+      allowance = BigInt(await opgToken.methods.allowance(account.address, INFERENCE_CONTRACT_ADDRESS).call());
+      console.log(`OPG balance: ${opgBalance.toString()}, allowance for inference contract: ${allowance.toString()}`);
+    } catch (allowanceErr) {
+      console.warn("Could not check OPG allowance (may not apply on this network):", allowanceErr);
+      // Continue — the token may not exist or allowance may not be required
+    }
+
+    // If OPG balance exists but allowance is insufficient, auto-approve
+    if (opgBalance > 0n && allowance < opgBalance) {
+      console.log("OPG allowance insufficient, sending approval transaction...");
+      try {
+        const MAX_UINT256 = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        const approveTx = opgToken.methods.approve(INFERENCE_CONTRACT_ADDRESS, MAX_UINT256);
+        const approveNonce = await web3.eth.getTransactionCount(account.address, "pending");
+        const approveGas = await approveTx.estimateGas({ from: account.address });
+        const approveGasPrice = await web3.eth.getGasPrice();
+
+        const signedApprove = await web3.eth.accounts.signTransaction(
+          {
+            from: account.address,
+            to: OPG_TOKEN_ADDRESS,
+            gas: Math.floor(Number(approveGas) * 2),
+            gasPrice: approveGasPrice,
+            nonce: approveNonce,
+            data: approveTx.encodeABI(),
+          },
+          ogKey
+        );
+        const approveReceipt = await web3.eth.sendSignedTransaction(signedApprove.rawTransaction!);
+        console.log("OPG approval tx:", approveReceipt.transactionHash);
+      } catch (approveErr) {
+        console.warn("OPG approval failed (may not be required):", approveErr);
+        // Continue — approval may not be needed on this network
+      }
+    }
+
     // Create contract instance with inlined ABI
     const contract = new web3.eth.Contract(INFERENCE_ABI, INFERENCE_CONTRACT_ADDRESS);
     const precompileContract = new web3.eth.Contract(PRECOMPILE_ABI, PRECOMPILE_ADDRESS);
@@ -246,7 +321,39 @@ serve(async (req) => {
     );
 
     const nonce = await web3.eth.getTransactionCount(account.address, "pending");
-    const estimatedGas = await runFunction.estimateGas({ from: account.address });
+
+    let estimatedGas: bigint;
+    try {
+      estimatedGas = await runFunction.estimateGas({ from: account.address });
+    } catch (gasErr: any) {
+      const gasMsg = String(gasErr?.message || gasErr || "");
+      console.error("Gas estimation failed:", gasMsg);
+
+      if (gasMsg.includes("execution reverted") || gasMsg.includes("insufficient")) {
+        const fallbackVolatility = token === "BTC" ? 0.051 : 0.043;
+        const { risk_level, recommendation } = assessRisk(fallbackVolatility);
+        return new Response(
+          JSON.stringify({
+            volatility: fallbackVolatility,
+            risk_level,
+            answer: `Gas estimation failed — the inference contract rejected the call.\n\n` +
+              `This usually means:\n` +
+              `• Your wallet needs more OPG tokens for inference fees\n` +
+              `• The spending allowance was not accepted\n\n` +
+              `Steps to fix:\n` +
+              `1. Visit https://faucet.opengradient.ai\n` +
+              `2. Fund address: ${account.address}\n` +
+              `3. Retry your query\n\n` +
+              `Showing a fallback estimate.`,
+            tx_hash: null,
+            warning: "Gas estimation failed. Fund your wallet and retry.",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw gasErr;
+    }
+
     const gasLimit = Math.floor(Number(estimatedGas) * 3);
     const gasPrice = await web3.eth.getGasPrice();
 
