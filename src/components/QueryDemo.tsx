@@ -9,7 +9,7 @@ export interface AnalyzeResult {
   volatility: number;
   risk_level: string;
   answer: string;
-  tx_hash: string;
+  tx_hash: string | null;
 }
 
 const QueryDemo = ({ onResult }: { onResult: (result: AnalyzeResult) => void }) => {
