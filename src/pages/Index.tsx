@@ -3,7 +3,7 @@ import HeroSection from "@/components/HeroSection";
 import PortfolioCard from "@/components/PortfolioCard";
 import AgentPipeline from "@/components/AgentPipeline";
 import QueryDemo, { CopyableHash, type AnalyzeResult } from "@/components/QueryDemo";
-import { ShieldCheck, Activity } from "lucide-react";
+import { ShieldCheck, Activity, AlertCircle } from "lucide-react";
 
 const riskColors: Record<string, string> = {
   low: "text-success",
@@ -66,6 +66,28 @@ const Index = () => {
                 </div>
               </div>
 
+            {/* Unfunded wallet banner */}
+              {!result.tx_hash && (
+                <div className="flex items-start gap-3 p-4 rounded-md border border-warning/40 bg-warning/10">
+                  <AlertCircle className="h-5 w-5 text-warning mt-0.5 flex-shrink-0" />
+                  <div className="space-y-1 text-sm">
+                    <p className="font-medium text-warning">On-chain verification unavailable</p>
+                    <p className="text-muted-foreground leading-relaxed">
+                      The result below is an off-chain estimate. To enable verifiable on-chain inference, fund your wallet on the{" "}
+                      <a
+                        href="https://faucet.opengradient.ai"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline text-primary hover:text-primary/80"
+                      >
+                        OpenGradient devnet faucet
+                      </a>{" "}
+                      and retry your query.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Full answer */}
               <div className="bg-secondary/40 rounded-md p-4">
                 <pre className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90 font-sans">
@@ -74,16 +96,18 @@ const Index = () => {
               </div>
 
               {/* Blockchain verification with copy */}
-              <div className="border border-border/50 rounded-md p-4 space-y-2">
-                <p className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                  Blockchain Verification
-                </p>
-                <CopyableHash label="Tx" value={result.tx_hash} />
-                <CopyableHash
-                  label="Model CID"
-                  value="hJD2Ja3akZFt1A2LT-D_1oxOCz_OtuGYw4V9eE1m39M"
-                />
-              </div>
+              {result.tx_hash && (
+                <div className="border border-border/50 rounded-md p-4 space-y-2">
+                  <p className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
+                    Blockchain Verification
+                  </p>
+                  <CopyableHash label="Tx" value={result.tx_hash} />
+                  <CopyableHash
+                    label="Model CID"
+                    value="hJD2Ja3akZFt1A2LT-D_1oxOCz_OtuGYw4V9eE1m39M"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">

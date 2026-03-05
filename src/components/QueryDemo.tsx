@@ -9,7 +9,7 @@ export interface AnalyzeResult {
   volatility: number;
   risk_level: string;
   answer: string;
-  tx_hash: string;
+  tx_hash: string | null;
 }
 
 const QueryDemo = ({ onResult }: { onResult: (result: AnalyzeResult) => void }) => {
@@ -29,7 +29,7 @@ const QueryDemo = ({ onResult }: { onResult: (result: AnalyzeResult) => void }) 
 
       if (fnError) throw new Error(fnError.message || "Edge function error");
       if (data?.error) throw new Error(data.error);
-      if (!data?.answer || !data?.tx_hash) throw new Error("Invalid response from agent");
+      if (!data?.answer) throw new Error("Invalid response from agent");
 
       onResult({
         volatility: data.volatility,
