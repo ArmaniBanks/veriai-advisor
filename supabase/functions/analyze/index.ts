@@ -195,8 +195,44 @@ serve(async (req) => {
   let token: "ETH" | "BTC" = "ETH";
   let holding = PORTFOLIO[token];
 
+  // ── Lightweight warmup/health endpoint ──
+  // Supports GET (any path) or POST { mode: "warmup" } — returns quickly
+  // without running inference so the frontend can wake the cold function.
   try {
-    const { query } = await req.json();
+    let body: any = null;
+    if (req.method === "POST") {
+      try { body = await req.clone().json(); } catch { body = null; }
+    }
+    const isWarmup = req.method === "GET" || body?.mode === "warmup";
+
+    if (isWarmup) {
+      const ogKey = Deno.env.get("OG_PRIVATE_KEY");
+      const walletConfigured = !!ogKey;
+      let chainReachable = false;
+      let walletAddress: string | null = null;
+      try {
+        const web3 = new Web3(OG_RPC_URL);
+        if (ogKey) {
+          const acct = web3.eth.accounts.privateKeyToAccount(ogKey);
+          walletAddress = acct.address;
+        }
+        // cheap RPC call with timeout
+        await Promise.race([
+          web3.eth.getChainId(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("rpc timeout")), 4000)),
+        ]);
+        chainReachable = true;
+      } catch (e) {
+        console.warn("Warmup RPC check failed:", (e as Error)?.message);
+      }
+      const status = walletConfigured && chainReachable ? "ready" : "degraded";
+      return new Response(
+        JSON.stringify({ status, walletConfigured, chainReachable, walletAddress }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const query = body?.query;
     if (!query || typeof query !== "string") {
       return new Response(JSON.stringify({ error: "query is required" }), {
         status: 400,
